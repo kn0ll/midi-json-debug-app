@@ -1,24 +1,14 @@
-import { parseArrayBuffer } from "midi-json-parser";
 import { IMidiFile } from "midi-json-parser-worker";
+import * as Types from "./types";
+
+import { parseArrayBuffer } from "midi-json-parser";
 import * as React from "react";
 import { render } from "react-dom";
 import DropToUpload from "react-drop-to-upload";
 import ReactJson from "react-json-view";
-import { compose, withHandlers, withState } from "recompose";
+import { branch, compose, renderComponent, withHandlers,
+  withProps, withState } from "recompose";
 import styled from "styled-components";
-
-type FileDropHandler = (files: ArrayBuffer[]) => void;
-
-interface IHandlers {
-  onFileDrop: FileDropHandler;
-}
-
-interface IState {
-  midiFiles: IMidiFile[];
-  setMidiFiles: (files: IMidiFile[]) => void;
-}
-
-type MidiDebugProps = IHandlers & IState;
 
 const Layout = styled.div`
   width: 100%;
@@ -27,18 +17,17 @@ const Layout = styled.div`
   min-height: 100%;
 `;
 
-const withFileState = withState<
-  undefined,
-  IMidiFile[],
-  "midiFiles",
-  "setMidiFiles"
->("midiFiles", "setMidiFiles", []);
-
-const withEventHandlers = withHandlers<IState, IHandlers>({
-  onFileDrop: ({setMidiFiles}): FileDropHandler => (files) => (
-    Promise.all(files.map(parseArrayBuffer)).then(setMidiFiles)
-  ),
-});
+const App: React.SFC<
+  Types.AppProps
+> = ({children, onFileDrop, midiFiles}) => (
+  <DropToUpload
+    onDropArrayBuffer={onFileDrop}
+  >
+    <Layout>
+      {children}
+    </Layout>
+  </DropToUpload>
+);
 
 const renderMidiFiles = (midiFiles: IMidiFile[]) => (
   midiFiles.map((file, idx) => (
@@ -46,19 +35,44 @@ const renderMidiFiles = (midiFiles: IMidiFile[]) => (
   ))
 );
 
-const MidiDebug: React.SFC<MidiDebugProps> = ({onFileDrop, midiFiles}) => (
-  <DropToUpload
-    onDropArrayBuffer={onFileDrop}
-  >
-    <Layout>
-      {renderMidiFiles(midiFiles)}
-    </Layout>
-  </DropToUpload>
+const withFileState = withState<
+  undefined,
+  IMidiFile[],
+  "midiFiles",
+  "setMidiFiles"
+>("midiFiles", "setMidiFiles", []);
+
+const withEventHandlers = withHandlers<Types.State, Types.IHandlers>({
+  onFileDrop: ({setMidiFiles}): Types.FileDropHandler => (files) => (
+    Promise.all(files.map(parseArrayBuffer)).then(setMidiFiles)
+  ),
+});
+
+const withChildrenProp = (handler: Types.WithChildrenHandler) => (
+  withProps<
+    Types.IMidiFilesProps,
+    Types.IMidiFilesProp
+  >(handler)
 );
 
-const MidiDebugContainer = compose(
+const withNoMidiFilesChildren = withChildrenProp((props) => ({
+  children: <p>Drop MIDI file(s) here</p>,
+}));
+
+const withMidiFilesChildren = withChildrenProp((props) => ({
+  children: renderMidiFiles(props.midiFiles),
+}));
+
+const branchMidiFilesChildren = branch<Types.IMidiFilesProp>(
+  ({ midiFiles }) => midiFiles.length === 0,
+  withNoMidiFilesChildren,
+  withMidiFilesChildren,
+);
+
+const AppContainer = compose(
   withFileState,
   withEventHandlers,
-)(MidiDebug);
+  branchMidiFilesChildren,
+)(App);
 
-render(<MidiDebugContainer />, document.getElementById("root"));
+render(<AppContainer />, document.getElementById("root"));
